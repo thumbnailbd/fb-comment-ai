@@ -35,16 +35,13 @@
   function App() {
     const getInitStep = () => {
       try {
-        const k = localStorage.getItem("ant_key");
         const t = localStorage.getItem("fb_token");
-        if (k && t) return 2;
-        if (k) return 1;
+        if (t) return 2;
       } catch(e) {}
-      return 0;
+      return 1;
     };
 
     const [step, setStep] = useState(getInitStep);
-    const [antKey, setAntKey] = useState(() => { try { return localStorage.getItem("ant_key") || ""; } catch(e) { return ""; } });
     const [token, setToken] = useState(() => { try { return localStorage.getItem("fb_token") || ""; } catch(e) { return ""; } });
     const [pageName, setPageName] = useState(() => { try { return localStorage.getItem("fb_page") || ""; } catch(e) { return ""; } });
     const [postId, setPostId] = useState("");
@@ -58,16 +55,9 @@
     const [success, setSuccess] = useState("");
 
     const tokenRef = useRef(""); tokenRef.current = token;
-    const antKeyRef = useRef(""); antKeyRef.current = antKey;
 
     const showErr = (m) => { setError(m); setTimeout(() => setError(""), 5000); };
     const showOk  = (m) => { setSuccess(m); setTimeout(() => setSuccess(""), 3000); };
-
-    const saveAntKey = () => {
-      if (!antKey.trim()) return showErr("API Key দাও আগে!");
-      try { localStorage.setItem("ant_key", antKey); } catch(e) {}
-      setStep(1);
-    };
 
     const validateToken = async () => {
       if (!token.trim()) return showErr("Facebook Token দাও আগে!");
@@ -87,7 +77,7 @@
       if (!postId.trim()) return showErr("Post ID দাও!");
       setLoading(true);
       try {
-        const r = await fetch(`${GRAPH}/${postId.trim()}/comments?access_token=${tokenRef.current}&fields=id,from,message,created_time&limit=50&order=chronological`);
+        const r = await fetch(`${GRAPH}/${postId.trim()}/comments?access_token=${tokenRef.current}&fields=id,from,message,created_time&limit=50&order=ranked`);
         const d = await r.json();
         if (d.error) throw new Error(d.error.message);
         if (!d.data?.length) { showErr("কোনো কমেন্ট পাওয়া যায়নি!"); setLoading(false); return; }
@@ -100,24 +90,20 @@
     const genReply = async (id, msg) => {
       setGenLoading(p => ({ ...p, [id]: true }));
       try {
-        const r = await fetch("https://api.anthropic.com/v1/messages", {
+        const r = await fetch("/api/generate", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-api-key": antKeyRef.current,
-            "anthropic-version": "2023-06-01",
-            "anthropic-dangerous-client-side-allow-browser": "true"
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            model: "claude-sonnet-4-20250514",
-            max_tokens: 300,
-            system: SYSTEM,
-            messages: [{ role: "user", content: `এই কমেন্টের রিপ্লাই দাও: "${msg}"` }]
+            contents: [{
+              role: "user",
+              parts: [{ text: SYSTEM + "\n\nএই কমেন্টের রিপ্লাই দাও: \"" + msg + "\"" }]
+            }]
           })
         });
         const data = await r.json();
-        if (data.error) throw new Error(data.error.message || data.error.type);
-        const reply = data.content?.[0]?.text || "";
+        if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
+        const reply = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+        if (!reply) throw new Error("কোনো রিপ্লাই আসেনি");
         setComments(p => p.map(c => c.id === id ? { ...c, reply } : c));
         setEditMap(p => ({ ...p, [id]: reply }));
       } catch(e) { showErr("AI সমস্যা: " + e.message); }
@@ -176,7 +162,7 @@
               <button onClick={genAll}
                 style={{ padding:"8px 14px", background:"linear-gradient(135deg,#7c3aed,#2563eb)", border:"none", borderRadius:8, color:"#fff", fontSize:13, fontWeight:600 }}>⚡ সব জেনারেট</button>
             </>}
-            {step > 0 && <button onClick={() => setStep(0)}
+            {step > 1 && <button onClick={() => { setStep(1); try { localStorage.removeItem("fb_token"); localStorage.removeItem("fb_page"); } catch(e) {} }}
               style={{ padding:"8px 12px", background:"transparent", border:"1px solid #3a3a5a", borderRadius:8, color:"#a0a0c0", fontSize:13 }}>⚙️</button>}
           </div>
         </div>
@@ -186,36 +172,6 @@
             <span>⚠️ {error}</span><span onClick={() => setError("")} style={{ cursor:"pointer" }}>✕</span>
           </div>}
           {success && <div style={{ background:"#0f2a1a", border:"1px solid #14532d", borderRadius:10, padding:"12px 16px", marginBottom:16, color:"#86efac", fontSize:14 }}>{success}</div>}
-
-          {/* STEP 0: Anthropic API Key */}
-          {step === 0 && (
-            <div className="fade-in">
-              <div style={{ textAlign:"center", marginBottom:28 }}>
-                <div style={{ fontSize:42, marginBottom:8 }}>🤖</div>
-                <h2 style={{ fontSize:22, fontWeight:700, color:"#fff" }}>Anthropic API Key</h2>
-                <p style={{ color:"#7c6f9e", fontSize:14, marginTop:8 }}>AI রিপ্লাই জেনারেট করতে একবার দিলেই হবে</p>
-              </div>
-              <div style={CARD}>
-                <label style={{ fontSize:14, color:"#a0a0c0", display:"block", marginBottom:8 }}>API Key</label>
-                <input type="password" placeholder="sk-ant-api03-..." value={antKey}
-                  onChange={e => setAntKey(e.target.value)} onKeyDown={e => e.key === "Enter" && saveAntKey()} style={INP} />
-                <button onClick={saveAntKey} style={{ ...BTN("linear-gradient(135deg,#7c3aed,#2563eb)"), marginTop:16 }}>
-                  ✓ সেভ করো ও পরবর্তী ধাপ
-                </button>
-              </div>
-              <div style={{ marginTop:12, background:"#0f0f1c", border:"1px solid #2a2a3a", borderRadius:12, padding:20, fontSize:13, color:"#9090b0", lineHeight:1.9 }}>
-                <div style={{ color:"#c4b5fd", fontWeight:600, marginBottom:10 }}>🔑 API Key কোথায় পাবে:</div>
-                <ol style={{ paddingLeft:20 }}>
-                  <li>যাও: <span style={{ color:"#60a5fa" }}>console.anthropic.com</span></li>
-                  <li>বাম দিকে <strong style={{ color:"#e8e8f0" }}>API Keys</strong> ক্লিক করো</li>
-                  <li><strong style={{ color:"#e8e8f0" }}>"Create Key"</strong> চাপো → কপি করো</li>
-                </ol>
-                <div style={{ marginTop:10, padding:"10px 12px", background:"#1a1a2e", borderRadius:8, color:"#fbbf24", fontSize:12 }}>
-                  💾 Key browser-এ সেভ থাকবে, পরে আর দিতে হবে না
-                </div>
-              </div>
-            </div>
-          )}
 
           {/* STEP 1: FB Token */}
           {step === 1 && (
