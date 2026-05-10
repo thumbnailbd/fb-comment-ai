@@ -84,7 +84,7 @@
         if (!postId.trim()) return showErr("Post ID দাও!");
         setLoading(true);
         try {
-          const r = await fetch(`${GRAPH}/${postId.trim()}/comments?access_token=${token}&fields=id,from,message,created_time&limit=50&order=ranked`);
+          const r = await fetch(`${GRAPH}/${postId.trim()}/comments?access_token=${token}&fields=id,from,message,created_time&limit=50&order=chronological`);
           const d = await r.json();
           if (d.error) throw new Error(d.error.message);
           if (!d.data?.length) { showErr("কোনো কমেন্ট পাওয়া যায়নি!"); setLoading(false); return; }
